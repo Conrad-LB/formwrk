@@ -11,13 +11,14 @@
  * is intentional — Custom is for exploring arbitrary builds; `calcHeightRange` returns a
  * correct range for any of them.
  *
- * Two catalogue rules are still preserved (they already hold for every catalogue config):
- *   - extensions apply to SINGLE frames only (none on doubles/triples), and
+ * Three catalogue rules are still preserved (they already hold for every catalogue config):
+ *   - extensions apply to SINGLE frames only (none on doubles/triples),
+ *   - extensions require HOLLOW jacks (no tested basis for solid stems in rockets), and
  *   - Prop Inner is available on SINGLE + THIN slabs only (never multi, never thick).
  * `customConfigFrom` coerces those so the built config can never violate them.
  */
 
-import { FRAME_HEIGHTS } from './frameData';
+import { FRAME_HEIGHTS, type JackType } from './frameData';
 import { isThickSlab } from './heightCalc';
 import type { FrameConfig, BaseType } from './configurations';
 
@@ -76,9 +77,9 @@ export function framesFromSlots(slots: Slots): string[] {
   return slots.filter((s): s is string => s != null);
 }
 
-/** Extensions apply to single frames only. */
-export function extensionAllowed(slots: Slots): boolean {
-  return framesFromSlots(slots).length <= 1;
+/** Extensions apply to single frames only, and require hollow jacks. */
+export function extensionAllowed(slots: Slots, jackType: JackType): boolean {
+  return framesFromSlots(slots).length <= 1 && jackType === 'hollow';
 }
 
 /** Prop Inner is available on a single frame + a thin slab only. */
@@ -98,19 +99,21 @@ export function describeCustom(frames: string[]): string {
 /**
  * Build a `FrameConfig` from the current custom selections, or `null` while no bottom
  * frame is chosen (the assembly isn't renderable yet). Coerces the extension and base
- * to the always-preserved catalogue rules (no extension / no Prop Inner on multi-frame;
- * no Prop Inner on thick slabs), so the returned config is always structurally legal.
+ * to the always-preserved catalogue rules (no extension on multi-frame or solid jacks;
+ * no Prop Inner on multi-frame or thick slabs), so the returned config is always
+ * structurally legal.
  */
 export function customConfigFrom(
   slots: Slots,
   rocket: string,
   baseType: BaseType,
   slabThickness: number,
+  jackType: JackType,
 ): FrameConfig | null {
   const frames = framesFromSlots(slots);
   if (frames.length === 0) return null;
 
-  const effRocket = extensionAllowed(slots) ? rocket : 'none';
+  const effRocket = extensionAllowed(slots, jackType) ? rocket : 'none';
   const effBase: BaseType =
     baseType === 'propInner' && !propInnerAllowed(slots, slabThickness) ? 'flatJack' : baseType;
 

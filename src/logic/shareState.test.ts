@@ -7,6 +7,7 @@ describe('shareState: round-trips', () => {
       panelMode: 'inputs',
       viewMode: 'exploded',
       slabThickness: 250,
+      jackType: 'solid',
       uHead: 203,
       base: 500,
       slabHeight: 3500,
@@ -21,6 +22,7 @@ describe('shareState: round-trips', () => {
       panelMode: 'custom',
       viewMode: 'packed',
       slabThickness: 200,
+      jackType: 'hollow',
       uHead: 300,
       base: 120,
       frames: ['6ft', '5ft'],
@@ -40,10 +42,11 @@ describe('shareState: validation', () => {
   });
 
   it('drops invalid enums and non-finite numbers, keeping safe defaults', () => {
-    const back = decodeShare('#pm=custom&vm=spinning&st=abc&uh=NaN&ba=50&fr=6ft-9ft-5ft&rk=999mm&bt=hoverjack');
+    const back = decodeShare('#pm=custom&vm=spinning&st=abc&jt=titanium&uh=NaN&ba=50&fr=6ft-9ft-5ft&rk=999mm&bt=hoverjack');
     expect(back).not.toBeNull();
     expect(back!.viewMode).toBe('assembled'); // bad vm -> default
     expect(back!.slabThickness).toBe(200); // bad st -> default
+    expect(back!.jackType).toBe('hollow'); // bad jt -> default
     expect(back!.uHead).toBe(0); // bad uh -> default
     expect(back!.base).toBe(50);
     expect(back!.frames).toEqual(['6ft', '5ft']); // '9ft' filtered out

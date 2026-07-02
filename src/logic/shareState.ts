@@ -9,11 +9,13 @@
 import { FRAME_SIZES } from './customBuild';
 import type { PanelMode, ViewMode } from '../store/formworkStore';
 import type { BaseType } from './configurations';
+import type { JackType } from './frameData';
 
 export interface ShareState {
   panelMode: PanelMode;
   viewMode: ViewMode;
   slabThickness: number;
+  jackType: JackType;
   uHead: number;
   base: number;
   // Inputs panel:
@@ -26,6 +28,7 @@ export interface ShareState {
 }
 
 const VIEW_MODES: ViewMode[] = ['assembled', 'exploded', 'packed'];
+const JACK_TYPES: JackType[] = ['hollow', 'solid'];
 const ROCKETS = ['none', '300mm', '500mm'];
 const BASES: BaseType[] = ['flatJack', 'propInner'];
 const FRAMES: readonly string[] = FRAME_SIZES;
@@ -42,6 +45,7 @@ export function encodeShare(s: ShareState): string {
   p.set('pm', s.panelMode);
   p.set('vm', s.viewMode);
   p.set('st', String(Math.round(s.slabThickness)));
+  p.set('jt', s.jackType);
   p.set('uh', String(Math.round(s.uHead)));
   p.set('ba', String(Math.round(s.base)));
   if (s.panelMode === 'inputs') {
@@ -66,10 +70,12 @@ export function decodeShare(hash: string): ShareState | null {
   const vmRaw = p.get('vm') as ViewMode | null;
   const viewMode: ViewMode = vmRaw && VIEW_MODES.includes(vmRaw) ? vmRaw : 'assembled';
   const slabThickness = int(p.get('st')) ?? 200;
+  const jtRaw = p.get('jt') as JackType | null;
+  const jackType: JackType = jtRaw && JACK_TYPES.includes(jtRaw) ? jtRaw : 'hollow';
   const uHead = int(p.get('uh')) ?? 0;
   const base = int(p.get('ba')) ?? 0;
 
-  const s: ShareState = { panelMode: pm, viewMode, slabThickness, uHead, base };
+  const s: ShareState = { panelMode: pm, viewMode, slabThickness, jackType, uHead, base };
 
   if (pm === 'inputs') {
     const sh = int(p.get('sh'));

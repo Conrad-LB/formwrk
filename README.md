@@ -13,11 +13,16 @@ Built around steel shoring frames with LVL timber members.
 
 ## Source of truth
 
-All height logic is a faithful reproduction of `Formwork_Material_Selection_v2.xlsx`
-(sheet *Mat. Selection (Draft)*). That spreadsheet is **non-negotiable** — the unit tests
-assert the engine reproduces every min/max value in it (27 thin-slab + 21 thick-slab
-configurations). If the spreadsheet changes, update `src/logic/frameData.ts` to match and
-re-run the tests.
+All height logic is a faithful reproduction of `Formwork_Material_Selection_v3.xlsx`
+(sheet *Mat. Selection v3*). That spreadsheet is **non-negotiable** — the unit tests
+assert the engine reproduces every min/max value in it across all four tables
+(hollow/solid jacks × thin/thick slabs, 28 configurations). If the spreadsheet changes,
+update `src/logic/frameData.ts` to match and re-run the tests.
+
+v3 design basis: product-agnostic and conservative (where supplier data differs, the more
+conservative value governs), nominal frame spacing ≤ 1.5 m, slabs to 450 mm (thicker
+requires a Temporary Works Engineer). Rockets are hollow-jack-only. Prop Inner and triple
+configurations are never recommended as Optimal — they carry an engineering-required flag.
 
 ## Tech stack
 
@@ -55,7 +60,7 @@ npm run build    # type-check + production build to dist/
 src/
   logic/
     frameData.ts        constants, every value traced to a spreadsheet cell
-    configurations.ts   the 27 canonical configs (14 singles + 5 doubles + 8 triples)
+    configurations.ts   the 28 canonical configs (14 singles + 6 doubles + 8 triples)
     heightCalc.ts       calcHeightRange / validity / live current-height
     catalogue.ts        valid-config queries, simplest-config recommendation, palette filtering
     heightCalc.test.ts  asserts the engine == the spreadsheet (66 tests)

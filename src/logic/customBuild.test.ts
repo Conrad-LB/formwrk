@@ -89,9 +89,10 @@ describe('customBuild: slot enablement + cascade', () => {
 });
 
 describe('customBuild: extension / prop-inner availability + coercion', () => {
-  it('extensions only on a single frame', () => {
-    expect(extensionAllowed(['6ft', null, null])).toBe(true);
-    expect(extensionAllowed(['6ft', '5ft', null])).toBe(false);
+  it('extensions only on a single frame with hollow jacks', () => {
+    expect(extensionAllowed(['6ft', null, null], 'hollow')).toBe(true);
+    expect(extensionAllowed(['6ft', '5ft', null], 'hollow')).toBe(false);
+    expect(extensionAllowed(['6ft', null, null], 'solid')).toBe(false); // rockets are hollow-only
   });
 
   it('prop inner only on a single, thin slab', () => {
@@ -101,7 +102,7 @@ describe('customBuild: extension / prop-inner availability + coercion', () => {
   });
 
   it('customConfigFrom coerces extension + prop-inner off a double', () => {
-    const c = customConfigFrom(['6ft', '5ft', null], '500mm', 'propInner', 200);
+    const c = customConfigFrom(['6ft', '5ft', null], '500mm', 'propInner', 200, 'hollow');
     expect(c).not.toBeNull();
     expect(c!.frames).toEqual(['6ft', '5ft']);
     expect(c!.rocket).toBe('none');
@@ -110,13 +111,18 @@ describe('customBuild: extension / prop-inner availability + coercion', () => {
   });
 
   it('customConfigFrom coerces prop-inner off a thick single but keeps a legal single', () => {
-    expect(customConfigFrom(['6ft', null, null], '500mm', 'propInner', 250)!.baseType).toBe('flatJack');
-    const legal = customConfigFrom(['6ft', null, null], '500mm', 'propInner', 200)!;
+    expect(customConfigFrom(['6ft', null, null], '500mm', 'propInner', 250, 'hollow')!.baseType).toBe('flatJack');
+    const legal = customConfigFrom(['6ft', null, null], '500mm', 'propInner', 200, 'hollow')!;
     expect(legal.rocket).toBe('500mm');
     expect(legal.baseType).toBe('propInner');
   });
 
+  it('customConfigFrom coerces the rocket off when the jacks are solid', () => {
+    const c = customConfigFrom(['6ft', null, null], '500mm', 'flatJack', 200, 'solid')!;
+    expect(c.rocket).toBe('none');
+  });
+
   it('returns null until a bottom frame is chosen', () => {
-    expect(customConfigFrom(EMPTY_SLOTS, 'none', 'flatJack', 200)).toBeNull();
+    expect(customConfigFrom(EMPTY_SLOTS, 'none', 'flatJack', 200, 'hollow')).toBeNull();
   });
 });

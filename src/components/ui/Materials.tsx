@@ -4,13 +4,14 @@
  * Two tabs:
  *   Optimal — the components of the active configuration (a descriptive,
  *             per-bay bill of materials with live screwjack steppers).
- *   Other   — every other valid configuration for the entered height; picking
- *             one sets it active and returns to the Optimal view.
+ *   Other / Select — every other valid configuration for the entered height; picking
+ *             one sets it active and returns to the Optimal view. The tab reads
+ *             "Select" when no Optimal exists (only engineering-flagged options fit).
  */
 import { useState } from 'react';
 import { useFormworkStore } from '../../store/formworkStore';
 import { buildBom } from '../../logic/bom';
-import { simplestValidConfig } from '../../logic/catalogue';
+import { simplestValidConfig, requiresEngineering } from '../../logic/catalogue';
 import { ExtensionStepper } from './ExtensionStepper';
 import { ConfigList } from './ConfigList';
 
@@ -21,12 +22,16 @@ export function Materials() {
   const range = useFormworkStore((s) => s.range);
   const slabHeight = useFormworkStore((s) => s.slabHeight);
   const slabThickness = useFormworkStore((s) => s.slabThickness);
+  const jackType = useFormworkStore((s) => s.jackType);
+  const hasValidOption = useFormworkStore((s) => s.hasValidOption);
   const setConfig = useFormworkStore((s) => s.setConfig);
 
-  const optimal = simplestValidConfig(slabHeight, slabThickness);
+  const optimal = simplestValidConfig(slabHeight, slabThickness, jackType);
   const isOptimal = !optimal || optimal.id === config.id;
+  // With no supplier-backed recommendation, the picker tab becomes "Select".
+  const pickerLabel = optimal ? 'Other' : 'Select';
 
-  const sections = buildBom(config, range);
+  const sections = buildBom(config, range, jackType);
   // Singles' labels are just "6ft" etc., so prefix them; doubles/triples already say so.
   const summary = config.frames.length === 1 ? `Single · ${config.label}` : config.label;
 
@@ -45,7 +50,7 @@ export function Materials() {
           className={`tab${tab === 'other' ? ' active' : ''}`}
           onClick={() => setTab('other')}
         >
-          Other
+          {pickerLabel}
         </button>
       </div>
 
@@ -58,8 +63,15 @@ export function Materials() {
         />
       ) : (
         <>
+          {!optimal && hasValidOption && (
+            <div className="materials-banner">
+              No standard configuration services this height — the options under {pickerLabel} require
+              engineering sign-off.
+            </div>
+          )}
           <div className="materials-head">
             <span className="materials-kind">{summary}</span>
+            {requiresEngineering(config) && <span className="config-badge warn">Engineering required</span>}
             {!isOptimal && optimal ? (
               <button type="button" className="revert" onClick={() => setConfig(optimal)}>
                 ↩ optimal

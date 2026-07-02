@@ -10,6 +10,7 @@
  */
 import { useFormworkStore } from '../../store/formworkStore';
 import type { BaseType } from '../../logic/configurations';
+import { SLAB_THICKNESS_MAX, type JackType } from '../../logic/frameData';
 import {
   FRAME_SIZES,
   slotEnabled,
@@ -38,6 +39,10 @@ const ROCKET_OPTIONS: Array<{ value: string; label: string }> = [
 const BASE_OPTIONS: Array<{ value: BaseType; label: string }> = [
   { value: 'flatJack', label: 'Flat Jack' },
   { value: 'propInner', label: 'Prop Inner' },
+];
+const JACK_OPTIONS: Array<{ value: JackType; label: string }> = [
+  { value: 'hollow', label: 'Hollow' },
+  { value: 'solid', label: 'Solid' },
 ];
 
 /** Three frame slots, non-increasing bottom → top; top slot can't be 7ft. */
@@ -104,14 +109,16 @@ function FramesPicker() {
   );
 }
 
-/** Extension: none / 300 / 500 — single frames only. */
+/** Extension: none / 300 / 500 — single frames + hollow jacks only. */
 function ExtensionPicker() {
   const customFrames = useFormworkStore((s) => s.customFrames);
   const customRocket = useFormworkStore((s) => s.customRocket);
+  const jackType = useFormworkStore((s) => s.jackType);
   const setCustomRocket = useFormworkStore((s) => s.setCustomRocket);
 
-  const allowed = extensionAllowed(customFrames);
+  const allowed = extensionAllowed(customFrames, jackType);
   const active = allowed ? customRocket : 'none';
+  const singleFrame = framesFromSlots(customFrames).length <= 1;
 
   return (
     <div className="bom-section">
@@ -129,7 +136,11 @@ function ExtensionPicker() {
           </button>
         ))}
       </div>
-      {!allowed && <span className="bom-hint">No extension on double or triple frames</span>}
+      {!allowed && (
+        <span className="bom-hint">
+          {singleFrame ? 'Extensions require hollow jacks' : 'No extension on double or triple frames'}
+        </span>
+      )}
     </div>
   );
 }
@@ -270,6 +281,8 @@ function CustomHeight({
 export function CustomPanel() {
   const slabThickness = useFormworkStore((s) => s.slabThickness);
   const setSlabThickness = useFormworkStore((s) => s.setSlabThickness);
+  const jackType = useFormworkStore((s) => s.jackType);
+  const setJackType = useFormworkStore((s) => s.setJackType);
   const towerVisible = useFormworkStore((s) => s.towerVisible);
   const config = useFormworkStore((s) => s.config);
   const range = useFormworkStore((s) => s.range);
@@ -285,6 +298,28 @@ export function CustomPanel() {
           <span>Slab thickness (mm)</span>
           <NumberInput value={slabThickness} onCommit={setSlabThickness} ariaLabel="slab thickness in millimetres" />
         </label>
+        {slabThickness >= SLAB_THICKNESS_MAX && (
+          <span className="hint warn-note">
+            Slabs thicker than {SLAB_THICKNESS_MAX} mm must be checked by a Temporary Works Engineer — the
+            tool works to {SLAB_THICKNESS_MAX} mm.
+          </span>
+        )}
+        <div className="field">
+          <span>Jack type</span>
+          <div className="chips">
+            {JACK_OPTIONS.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                className={`chip${jackType === o.value ? ' active' : ''}`}
+                aria-pressed={jackType === o.value}
+                onClick={() => setJackType(o.value)}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </section>
 
       <section className="card materials">

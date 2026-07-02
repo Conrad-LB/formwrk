@@ -6,7 +6,7 @@ const get = () => useFormworkStore.getState();
 
 beforeEach(() => {
   // Reset to a known baseline: Inputs mode, no custom build / saved workspaces,
-  // thin 200mm slab, 2800mm soffit, Build view.
+  // thin 200mm slab, 2800mm soffit, hollow jacks, Build view.
   useFormworkStore.setState({
     panelMode: 'inputs',
     viewMode: 'assembled',
@@ -16,6 +16,7 @@ beforeEach(() => {
     savedInputs: null,
     savedCustom: null,
   });
+  get().setJackType('hollow');
   get().setSlabThickness(200);
   get().setSlabHeight(2800);
 });
@@ -64,6 +65,11 @@ describe('store: input hardening (Finding 7)', () => {
     expect(get().slabHeight).toBeLessThanOrEqual(20000);
   });
 
+  it('clamps slab thickness to the 450mm design maximum (TWE note territory)', () => {
+    get().setSlabThickness(600);
+    expect(get().slabThickness).toBe(450);
+  });
+
   it('rejects non-finite extension values', () => {
     const u = get().uHeadExtension;
     get().setUHeadExtension(Infinity);
@@ -73,7 +79,8 @@ describe('store: input hardening (Finding 7)', () => {
 
 describe('store: renders adjusted to the target soffit (every entry path)', () => {
   it('loads adjusted to the target (current == target, meetsTarget)', () => {
-    expect(get().config.id).toBe('s-6ft-fj');
+    // v3 hollow-thin jacks reach 600/600, so a 5ft single now services 2800 (smaller frames win).
+    expect(get().config.id).toBe('s-5ft-fj');
     expect(get().currentHeight).toBe(2800);
     expect(get().meetsTarget).toBe(true);
   });
@@ -249,6 +256,42 @@ describe('store: custom build panel', () => {
   });
 });
 
+describe('store: jack type (hollow / solid)', () => {
+  it('switching to solid never leaves a rocket config active', () => {
+    get().setSlabHeight(3400); // hollow: optimal is a plain 7ft, but force a rocket config
+    get().setConfig(CONFIG_BY_ID['s-6ft-500-fj']);
+    expect(get().config.id).toBe('s-6ft-500-fj');
+    get().setJackType('solid');
+    expect(get().config.rocket).toBe('none'); // rockets are hollow-only
+    expect(get().available).toBe(true);
+  });
+
+  it('solid jacks shrink ranges, so the optimal single steps up a frame size at 2800', () => {
+    expect(get().config.id).toBe('s-5ft-fj'); // hollow: 5ft reaches 2990
+    expect(get().range.max).toBe(2990);
+    get().setJackType('solid');
+    expect(get().config.id).toBe('s-6ft-fj'); // solid 5ft tops out at 2690 -> 6ft takes over
+    expect(get().range.max).toBe(2997);
+  });
+
+  it('custom build coerces the rocket off when switching to solid', () => {
+    get().setPanelMode('custom');
+    get().setCustomSlot(0, '6ft');
+    get().setCustomRocket('500mm');
+    expect(get().config.rocket).toBe('500mm');
+    get().setJackType('solid');
+    expect(get().config.rocket).toBe('none');
+  });
+
+  it('no optimal exists in the solid thick gap; the previous config is kept (never auto-swaps onto a triple)', () => {
+    get().setSlabThickness(300); // thick
+    get().setJackType('solid');
+    get().setSlabHeight(3200); // only t-3-3-3 services this — engineering required
+    expect(get().hasValidOption).toBe(true); // a (flagged) option exists…
+    expect(get().config.frames.length).toBeLessThanOrEqual(2); // …but we never auto-assemble it
+  });
+});
+
 describe('store: setHeight / dialToTarget / resetView', () => {
   it('setHeight allocates the jacks to reach a height, clamped to the range', () => {
     get().setHeight(2500);
@@ -282,6 +325,7 @@ describe('store: hydrateFromShare', () => {
       panelMode: 'inputs',
       viewMode: 'exploded',
       slabThickness: 250,
+      jackType: 'hollow',
       uHead: 200,
       base: 250,
       slabHeight: 3500,
@@ -300,6 +344,7 @@ describe('store: hydrateFromShare', () => {
       panelMode: 'custom',
       viewMode: 'packed',
       slabThickness: 200,
+      jackType: 'hollow',
       uHead: 300,
       base: 120,
       frames: ['6ft', '5ft'],
@@ -314,7 +359,7 @@ describe('store: hydrateFromShare', () => {
 
   it('normalizes an illegal shared frame stack (bigger frame on top) to a legal one', () => {
     get().hydrateFromShare({
-      panelMode: 'custom', viewMode: 'assembled', slabThickness: 200, uHead: 100, base: 50,
+      panelMode: 'custom', viewMode: 'assembled', slabThickness: 200, jackType: 'hollow', uHead: 100, base: 50,
       frames: ['3ft', '7ft'], rocket: 'none', baseType: 'flatJack',
     });
     expect(get().config.frames).toEqual(['3ft']); // 7ft over 3ft is illegal -> dropped
@@ -322,7 +367,7 @@ describe('store: hydrateFromShare', () => {
 
   it('normalizes 7-7-7 (top slot cannot be 7ft) to a legal double', () => {
     get().hydrateFromShare({
-      panelMode: 'custom', viewMode: 'assembled', slabThickness: 200, uHead: 100, base: 50,
+      panelMode: 'custom', viewMode: 'assembled', slabThickness: 200, jackType: 'hollow', uHead: 100, base: 50,
       frames: ['7ft', '7ft', '7ft'], rocket: 'none', baseType: 'flatJack',
     });
     expect(get().config.frames).toEqual(['7ft', '7ft']); // top 7ft dropped
@@ -333,6 +378,7 @@ describe('store: hydrateFromShare', () => {
       panelMode: 'inputs',
       viewMode: 'assembled',
       slabThickness: 260, // thick
+      jackType: 'hollow',
       uHead: 100,
       base: 50,
       slabHeight: 3000,

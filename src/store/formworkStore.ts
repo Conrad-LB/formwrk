@@ -7,16 +7,16 @@
  *   - 'custom': hand-build a frame set (no target) → the tool reports its height range.
  *
  * The two panels are fully independent workspaces. The fields the scene renders
- * (`config`, jacks, `slabThickness`, `viewMode`, …) always reflect the ACTIVE panel.
- * On a panel switch the active fields are snapshotted into the outgoing panel's slot
- * (`savedInputs` / `savedCustom`) and the incoming panel's snapshot is restored verbatim
- * (or its default on first visit). Nothing is shared between the two — changing the slab
- * thickness or the view in one panel never touches the other.
+ * (`config`, jacks, `slabThickness`, `jackType`, `viewMode`, …) always reflect the ACTIVE
+ * panel. On a panel switch the active fields are snapshotted into the outgoing panel's
+ * slot (`savedInputs` / `savedCustom`) and the incoming panel's snapshot is restored
+ * verbatim (or its default on first visit). Nothing is shared between the two — changing
+ * the slab thickness, jack type or the view in one panel never touches the other.
  *
  * Within Inputs, every mutation goes through the same resolver so two invariants hold:
- *   1. the active config is ALWAYS available for the current slab (a Prop Inner can never
- *      remain active on a thick slab), and
- *   2. derived `isValid` reflects BOTH slab availability and the height range.
+ *   1. the active config is ALWAYS available for the current slab + jack type (a Prop
+ *      Inner can never remain active on a thick slab; a rocket never on solid jacks), and
+ *   2. derived `isValid` reflects BOTH availability and the height range.
  */
 
 import { create } from 'zustand';
@@ -24,14 +24,14 @@ import { CONFIG_BY_ID, type FrameConfig, type BaseType } from '../logic/configur
 import {
   calcHeightRange,
   currentHeight as calcCurrentHeight,
-  isAvailableForSlab,
+  isAvailable,
   allocateExtensionsToTarget,
   type HeightRange,
 } from '../logic/heightCalc';
-import { simplestValidConfig, simplestAvailableConfig } from '../logic/catalogue';
+import { simplestValidConfig, simplestAvailableConfig, validConfigsForInputs } from '../logic/catalogue';
 import { customConfigFrom, applySlot, sizeAllowed, EMPTY_SLOTS, type Slots } from '../logic/customBuild';
 import type { ShareState } from '../logic/shareState';
-import { INPUT_LIMITS } from '../logic/frameData';
+import { INPUT_LIMITS, type JackType } from '../logic/frameData';
 
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 
@@ -53,9 +53,9 @@ export type PanelMode = 'inputs' | 'custom';
 interface Derived {
   range: ReturnType<typeof calcHeightRange>;
   currentHeight: number;
-  /** Active config is permitted for the current slab thickness. */
+  /** Active config is permitted for the current slab thickness + jack type. */
   available: boolean;
-  /** Some configuration in the catalogue services the entered height. */
+  /** Some configuration in the catalogue services the entered height (incl. engineering-flagged ones). */
   hasValidOption: boolean;
   /** Target slab height falls within the active config's range AND it's available. */
   isValid: boolean;
@@ -66,14 +66,15 @@ interface Derived {
 function derive(
   config: FrameConfig,
   slabThickness: number,
+  jackType: JackType,
   slabHeight: number,
   uHeadExtension: number,
   baseExtension: number,
 ): Derived {
-  const range = calcHeightRange(config, slabThickness);
+  const range = calcHeightRange(config, slabThickness, jackType);
   const currentHeight = calcCurrentHeight(config, uHeadExtension, baseExtension);
-  const available = isAvailableForSlab(config, slabThickness);
-  const hasValidOption = simplestValidConfig(slabHeight, slabThickness) !== null;
+  const available = isAvailable(config, slabThickness, jackType);
+  const hasValidOption = validConfigsForInputs(slabHeight, slabThickness, jackType).length > 0;
   return {
     range,
     currentHeight,
@@ -88,47 +89,51 @@ const EMPTY_RANGE: HeightRange = { min: 0, max: 0, uHeadMin: 0, uHeadMax: 0, bas
 
 /**
  * Resolve the full INPUTS assembly for a set of inputs:
- *  - prefer the simplest valid config for the height,
- *  - else keep the previous config IF it's still available for the slab,
+ *  - prefer the Optimal (simplest valid, supplier-backed) config for the height,
+ *  - else keep the previous config IF it's still available for the slab + jack type
+ *    (an engineering-flagged pick from Select survives — we never auto-swap ONTO one),
  *  - else fall back to the simplest available config (never a prohibited one),
  * then ALLOCATE the screwjacks so the assembly is rendered adjusted to the target
  * soffit (clamped to the config's range). Manual drags afterward are preserved.
  */
-function resolveInputs(slabHeight: number, slabThickness: number, prevConfig: FrameConfig) {
+function resolveInputs(slabHeight: number, slabThickness: number, jackType: JackType, prevConfig: FrameConfig) {
   const config =
-    simplestValidConfig(slabHeight, slabThickness) ??
-    (isAvailableForSlab(prevConfig, slabThickness)
+    simplestValidConfig(slabHeight, slabThickness, jackType) ??
+    (isAvailable(prevConfig, slabThickness, jackType)
       ? prevConfig
-      : simplestAvailableConfig(slabThickness));
-  const { uHeadExtension, baseExtension } = allocateExtensionsToTarget(config, slabThickness, slabHeight);
+      : simplestAvailableConfig(slabThickness, jackType));
+  const { uHeadExtension, baseExtension } = allocateExtensionsToTarget(config, slabThickness, jackType, slabHeight);
   return {
     slabHeight,
     slabThickness,
+    jackType,
     config,
     uHeadExtension,
     baseExtension,
     towerVisible: true,
-    ...derive(config, slabThickness, slabHeight, uHeadExtension, baseExtension),
+    ...derive(config, slabThickness, jackType, slabHeight, uHeadExtension, baseExtension),
   };
 }
 
 /**
- * Resolve the CUSTOM assembly from the current slot selections + slab thickness, seating
- * the jacks at `desiredUHead`/`desiredBase` (clamped to the config's range). While no
- * bottom frame is chosen the build is incomplete → `towerVisible = false` and the height
- * range reads empty; `fallbackConfig` is kept only so the (hidden) scene has something to
- * hold. Custom has no target height, so target-derived flags are set to safe values.
+ * Resolve the CUSTOM assembly from the current slot selections + slab thickness + jack
+ * type, seating the jacks at `desiredUHead`/`desiredBase` (clamped to the config's
+ * range). While no bottom frame is chosen the build is incomplete → `towerVisible =
+ * false` and the height range reads empty; `fallbackConfig` is kept only so the (hidden)
+ * scene has something to hold. Custom has no target height, so target-derived flags are
+ * set to safe values.
  */
 function resolveCustom(
   frames: Slots,
   rocket: string,
   baseType: BaseType,
   slabThickness: number,
+  jackType: JackType,
   desiredUHead: number,
   desiredBase: number,
   fallbackConfig: FrameConfig,
 ) {
-  const config = customConfigFrom(frames, rocket, baseType, slabThickness);
+  const config = customConfigFrom(frames, rocket, baseType, slabThickness, jackType);
   if (!config) {
     return {
       config: fallbackConfig,
@@ -143,7 +148,7 @@ function resolveCustom(
       towerVisible: false,
     };
   }
-  const range = calcHeightRange(config, slabThickness);
+  const range = calcHeightRange(config, slabThickness, jackType);
   const uHeadExtension = clamp(Math.round(desiredUHead), range.uHeadMin, range.uHeadMax);
   const baseExtension = clamp(Math.round(desiredBase), range.baseMin, range.baseMax);
   return {
@@ -164,6 +169,7 @@ function resolveCustom(
 type PanelSnapshot = Derived & {
   slabHeight: number;
   slabThickness: number;
+  jackType: JackType;
   config: FrameConfig;
   uHeadExtension: number;
   baseExtension: number;
@@ -175,6 +181,7 @@ export interface FormworkState extends Derived {
   // Inputs
   slabHeight: number; // mm, floor to soffit
   slabThickness: number; // mm
+  jackType: JackType; // hollow (tubular) or solid-stem screwjacks
 
   // Active configuration + live adjustable extensions (mm)
   config: FrameConfig;
@@ -204,6 +211,8 @@ export interface FormworkState extends Derived {
   // Actions
   setSlabHeight: (h: number) => void;
   setSlabThickness: (t: number) => void;
+  /** Switch between hollow (tubular) and solid-stem jacks; re-resolves the active panel. */
+  setJackType: (t: JackType) => void;
   /** Swap the whole configuration; coerced to an available one and clamped to its ranges. */
   setConfig: (config: FrameConfig) => void;
   setUHeadExtension: (v: number) => void;
@@ -212,7 +221,7 @@ export interface FormworkState extends Derived {
   setHeight: (h: number) => void;
   /** Inputs only: dial the jacks so the assembly meets the target slab height. */
   dialToTarget: () => void;
-  /** Re-pick the simplest valid config for the current inputs (no-op if none fits). */
+  /** Re-pick the Optimal config for the current inputs (no-op if none fits). */
   autoAssemble: () => void;
   /** Switch the viewport presentation (assembled / exploded / packed). */
   setViewMode: (mode: ViewMode) => void;
@@ -230,28 +239,32 @@ export interface FormworkState extends Derived {
   hydrateFromShare: (share: ShareState) => void;
 }
 
-// Sensible defaults: 2800mm soffit, 200mm (thin) slab -> simplest valid = 6ft Flat Jack.
+// Sensible defaults: 2800mm soffit, 200mm (thin) slab, hollow jacks -> Optimal = 5ft Flat Jack
+// (hollow-thin jacks reach 600/600, so the 5ft single services 2800; smaller frames rank first).
 const DEFAULT_HEIGHT = 2800;
 const DEFAULT_THICKNESS = 200;
-const initialConfig = simplestValidConfig(DEFAULT_HEIGHT, DEFAULT_THICKNESS) ?? CONFIG_BY_ID['s-6ft-fj'];
-const initialAlloc = allocateExtensionsToTarget(initialConfig, DEFAULT_THICKNESS, DEFAULT_HEIGHT);
+const DEFAULT_JACK: JackType = 'hollow';
+const initialConfig = simplestValidConfig(DEFAULT_HEIGHT, DEFAULT_THICKNESS, DEFAULT_JACK) ?? CONFIG_BY_ID['s-6ft-fj'];
+const initialAlloc = allocateExtensionsToTarget(initialConfig, DEFAULT_THICKNESS, DEFAULT_JACK, DEFAULT_HEIGHT);
 
-/** Inputs default workspace — a 6ft Flat Jack dialled to 2800mm on a thin slab, Build view. */
+/** Inputs default workspace — the optimal single dialled to 2800mm on a thin slab, Build view. */
 const INPUTS_DEFAULT: PanelSnapshot = {
   slabHeight: DEFAULT_HEIGHT,
   slabThickness: DEFAULT_THICKNESS,
+  jackType: DEFAULT_JACK,
   config: initialConfig,
   uHeadExtension: initialAlloc.uHeadExtension,
   baseExtension: initialAlloc.baseExtension,
   viewMode: 'assembled',
   towerVisible: true,
-  ...derive(initialConfig, DEFAULT_THICKNESS, DEFAULT_HEIGHT, initialAlloc.uHeadExtension, initialAlloc.baseExtension),
+  ...derive(initialConfig, DEFAULT_THICKNESS, DEFAULT_JACK, DEFAULT_HEIGHT, initialAlloc.uHeadExtension, initialAlloc.baseExtension),
 };
 
 /** Custom default workspace — a blank build (nothing rendered) on a thin slab, Build view. */
 const CUSTOM_DEFAULT: PanelSnapshot = {
   slabHeight: DEFAULT_HEIGHT,
   slabThickness: DEFAULT_THICKNESS,
+  jackType: DEFAULT_JACK,
   config: initialConfig, // placeholder; hidden while towerVisible is false
   uHeadExtension: 0,
   baseExtension: 0,
@@ -269,6 +282,7 @@ const CUSTOM_DEFAULT: PanelSnapshot = {
 const snapshot = (s: FormworkState): PanelSnapshot => ({
   slabHeight: s.slabHeight,
   slabThickness: s.slabThickness,
+  jackType: s.jackType,
   config: s.config,
   uHeadExtension: s.uHeadExtension,
   baseExtension: s.baseExtension,
@@ -297,10 +311,11 @@ export const useFormworkStore = create<FormworkState>((set, get) => ({
     const s = get();
     if (s.panelMode !== 'inputs') return; // slab height is an Inputs-only control
     const slabHeight = clamp(Math.round(h), 0, INPUT_LIMITS.slabHeightMax);
-    set(resolveInputs(slabHeight, s.slabThickness, s.config));
+    set(resolveInputs(slabHeight, s.slabThickness, s.jackType, s.config));
   },
 
   // Each panel owns its own slab thickness; re-resolve only the active one.
+  // Values above the design maximum clamp to it (the UI shows the TWE note).
   setSlabThickness: (t) => {
     if (!Number.isFinite(t)) return;
     const s = get();
@@ -309,28 +324,42 @@ export const useFormworkStore = create<FormworkState>((set, get) => ({
       // Preserve the current jack positions (clamped to the new range).
       set({
         slabThickness,
-        ...resolveCustom(s.customFrames, s.customRocket, s.customBaseType, slabThickness, s.uHeadExtension, s.baseExtension, s.config),
+        ...resolveCustom(s.customFrames, s.customRocket, s.customBaseType, slabThickness, s.jackType, s.uHeadExtension, s.baseExtension, s.config),
       });
     } else {
-      set(resolveInputs(s.slabHeight, slabThickness, s.config));
+      set(resolveInputs(s.slabHeight, slabThickness, s.jackType, s.config));
+    }
+  },
+
+  // Each panel owns its own jack type too; rockets coerce off when switching to solid.
+  setJackType: (t) => {
+    const s = get();
+    if (t === s.jackType) return;
+    if (s.panelMode === 'custom') {
+      set({
+        jackType: t,
+        ...resolveCustom(s.customFrames, s.customRocket, s.customBaseType, s.slabThickness, t, s.uHeadExtension, s.baseExtension, s.config),
+      });
+    } else {
+      set(resolveInputs(s.slabHeight, s.slabThickness, t, s.config));
     }
   },
 
   setConfig: (configArg) => {
     const s = get();
     if (s.panelMode !== 'inputs') return; // Custom builds via the frame slots, not whole-config swaps
-    // Never activate a config that's prohibited for the current slab.
-    const config = isAvailableForSlab(configArg, s.slabThickness)
+    // Never activate a config that's prohibited for the current slab + jack type.
+    const config = isAvailable(configArg, s.slabThickness, s.jackType)
       ? configArg
-      : simplestAvailableConfig(s.slabThickness);
+      : simplestAvailableConfig(s.slabThickness, s.jackType);
     // Render the newly-selected config adjusted to the target soffit.
-    const { uHeadExtension, baseExtension } = allocateExtensionsToTarget(config, s.slabThickness, s.slabHeight);
+    const { uHeadExtension, baseExtension } = allocateExtensionsToTarget(config, s.slabThickness, s.jackType, s.slabHeight);
     set({
       config,
       uHeadExtension,
       baseExtension,
       towerVisible: true,
-      ...derive(config, s.slabThickness, s.slabHeight, uHeadExtension, baseExtension),
+      ...derive(config, s.slabThickness, s.jackType, s.slabHeight, uHeadExtension, baseExtension),
     });
   },
 
@@ -344,7 +373,7 @@ export const useFormworkStore = create<FormworkState>((set, get) => ({
     } else {
       set({
         uHeadExtension,
-        ...derive(s.config, s.slabThickness, s.slabHeight, uHeadExtension, s.baseExtension),
+        ...derive(s.config, s.slabThickness, s.jackType, s.slabHeight, uHeadExtension, s.baseExtension),
       });
     }
   },
@@ -358,7 +387,7 @@ export const useFormworkStore = create<FormworkState>((set, get) => ({
     } else {
       set({
         baseExtension,
-        ...derive(s.config, s.slabThickness, s.slabHeight, s.uHeadExtension, baseExtension),
+        ...derive(s.config, s.slabThickness, s.jackType, s.slabHeight, s.uHeadExtension, baseExtension),
       });
     }
   },
@@ -369,11 +398,11 @@ export const useFormworkStore = create<FormworkState>((set, get) => ({
     if (!Number.isFinite(h)) return;
     const s = get();
     const target = clamp(Math.round(h), s.range.min, s.range.max);
-    const { uHeadExtension, baseExtension } = allocateExtensionsToTarget(s.config, s.slabThickness, target);
+    const { uHeadExtension, baseExtension } = allocateExtensionsToTarget(s.config, s.slabThickness, s.jackType, target);
     if (s.panelMode === 'custom') {
       set({ uHeadExtension, baseExtension, currentHeight: calcCurrentHeight(s.config, uHeadExtension, baseExtension) });
     } else {
-      set({ uHeadExtension, baseExtension, ...derive(s.config, s.slabThickness, s.slabHeight, uHeadExtension, baseExtension) });
+      set({ uHeadExtension, baseExtension, ...derive(s.config, s.slabThickness, s.jackType, s.slabHeight, uHeadExtension, baseExtension) });
     }
   },
 
@@ -385,7 +414,7 @@ export const useFormworkStore = create<FormworkState>((set, get) => ({
 
   autoAssemble: () => {
     const s = get();
-    const next = simplestValidConfig(s.slabHeight, s.slabThickness);
+    const next = simplestValidConfig(s.slabHeight, s.slabThickness, s.jackType);
     if (next) get().setConfig(next);
   },
 
@@ -408,19 +437,19 @@ export const useFormworkStore = create<FormworkState>((set, get) => ({
     const s = get();
     if (s.panelMode !== 'custom') return;
     const customFrames = applySlot(s.customFrames, index, size);
-    set({ customFrames, ...resolveCustom(customFrames, s.customRocket, s.customBaseType, s.slabThickness, 0, 0, s.config) });
+    set({ customFrames, ...resolveCustom(customFrames, s.customRocket, s.customBaseType, s.slabThickness, s.jackType, 0, 0, s.config) });
   },
 
   setCustomRocket: (rocket) => {
     const s = get();
     if (s.panelMode !== 'custom') return;
-    set({ customRocket: rocket, ...resolveCustom(s.customFrames, rocket, s.customBaseType, s.slabThickness, 0, 0, s.config) });
+    set({ customRocket: rocket, ...resolveCustom(s.customFrames, rocket, s.customBaseType, s.slabThickness, s.jackType, 0, 0, s.config) });
   },
 
   setCustomBaseType: (baseType) => {
     const s = get();
     if (s.panelMode !== 'custom') return;
-    set({ customBaseType: baseType, ...resolveCustom(s.customFrames, s.customRocket, baseType, s.slabThickness, 0, 0, s.config) });
+    set({ customBaseType: baseType, ...resolveCustom(s.customFrames, s.customRocket, baseType, s.slabThickness, s.jackType, 0, 0, s.config) });
   },
 
   resetView: () => set((s) => ({ viewResetNonce: s.viewResetNonce + 1 })),
@@ -430,6 +459,7 @@ export const useFormworkStore = create<FormworkState>((set, get) => ({
   hydrateFromShare: (share) => {
     const viewMode: ViewMode = share.viewMode;
     const slabThickness = clamp(Math.round(share.slabThickness), 0, INPUT_LIMITS.slabThicknessMax);
+    const jackType: JackType = share.jackType;
     if (share.panelMode === 'custom') {
       // Normalize the decoded frames through the real slot rules (a hand-edited hash could
       // otherwise carry an illegal stack, which the picker would show as active-yet-disabled).
@@ -446,19 +476,20 @@ export const useFormworkStore = create<FormworkState>((set, get) => ({
         viewMode,
         viewResetNonce: get().viewResetNonce + 1,
         slabThickness,
+        jackType,
         slabHeight: DEFAULT_HEIGHT,
         customFrames,
         customRocket,
         customBaseType,
         savedInputs: null,
         savedCustom: null,
-        ...resolveCustom(customFrames, customRocket, customBaseType, slabThickness, share.uHead, share.base, initialConfig),
+        ...resolveCustom(customFrames, customRocket, customBaseType, slabThickness, jackType, share.uHead, share.base, initialConfig),
       });
     } else {
       const wanted = share.configId ? CONFIG_BY_ID[share.configId] : undefined;
-      const config = wanted && isAvailableForSlab(wanted, slabThickness) ? wanted : simplestAvailableConfig(slabThickness);
+      const config = wanted && isAvailable(wanted, slabThickness, jackType) ? wanted : simplestAvailableConfig(slabThickness, jackType);
       const slabHeight = clamp(Math.round(share.slabHeight ?? DEFAULT_HEIGHT), 0, INPUT_LIMITS.slabHeightMax);
-      const range = calcHeightRange(config, slabThickness);
+      const range = calcHeightRange(config, slabThickness, jackType);
       const uHeadExtension = clamp(Math.round(share.uHead), range.uHeadMin, range.uHeadMax);
       const baseExtension = clamp(Math.round(share.base), range.baseMin, range.baseMax);
       set({
@@ -466,6 +497,7 @@ export const useFormworkStore = create<FormworkState>((set, get) => ({
         viewMode,
         viewResetNonce: get().viewResetNonce + 1,
         slabThickness,
+        jackType,
         slabHeight,
         config,
         uHeadExtension,
@@ -476,7 +508,7 @@ export const useFormworkStore = create<FormworkState>((set, get) => ({
         customBaseType: 'flatJack',
         savedInputs: null,
         savedCustom: null,
-        ...derive(config, slabThickness, slabHeight, uHeadExtension, baseExtension),
+        ...derive(config, slabThickness, jackType, slabHeight, uHeadExtension, baseExtension),
       });
     }
   },

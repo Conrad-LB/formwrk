@@ -37,6 +37,11 @@ export default function App() {
           This is a material planning and configuration tool only. Temporary engineering
           designs and inspections, in accordance with local Standards and guidelines, are
           required prior to erecting any formwork.
+          <span className="disclaimer-basis">
+            Basis: product-agnostic, conservative supplier data (AS 3610 context) · frame spacing
+            ≤ 1.5 m nominal · slabs to 450 mm. Prop Inner and triple-stack options require
+            Temporary Works Engineer design.
+          </span>
         </div>
         <p className="foot">
           {panelMode === 'inputs'

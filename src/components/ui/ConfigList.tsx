@@ -1,22 +1,32 @@
 /**
- * The "Other" tab: every configuration whose serviceable range contains the
- * entered slab height, simplest-first. Picking one sets it active and returns
- * to the Components view. This is also how the 3/4ft triples become reachable.
+ * The "Other" / "Select" tab: every configuration whose serviceable range contains the
+ * entered slab height, simplest-first. Picking one sets it active and returns to the
+ * Components view. Prop Inner and triple configurations carry an engineering badge —
+ * they are never the Optimal recommendation but remain selectable here.
  */
 import { useFormworkStore } from '../../store/formworkStore';
-import { validConfigsRanked } from '../../logic/catalogue';
+import { validConfigsRanked, isOptimalEligible } from '../../logic/catalogue';
 import { calcHeightRange } from '../../logic/heightCalc';
 import type { FrameConfig } from '../../logic/configurations';
 
 const kindOf = (n: number) => (n === 1 ? 'Single' : n === 2 ? 'Double' : 'Triple');
 
+/** Badge for a row: Optimal (the recommendation) or the engineering flag, if any. */
+function badgeFor(c: FrameConfig, optimalId: string | undefined) {
+  if (c.id === optimalId) return <span className="config-badge">Optimal</span>;
+  if (c.baseType === 'propInner') return <span className="config-badge warn">TWE required</span>;
+  if (c.frames.length >= 3) return <span className="config-badge warn">Engineering required</span>;
+  return null;
+}
+
 export function ConfigList({ onPick }: { onPick: (c: FrameConfig) => void }) {
   const slabHeight = useFormworkStore((s) => s.slabHeight);
   const slabThickness = useFormworkStore((s) => s.slabThickness);
+  const jackType = useFormworkStore((s) => s.jackType);
   const activeId = useFormworkStore((s) => s.config.id);
 
-  const list = validConfigsRanked(slabHeight, slabThickness);
-  const optimalId = list[0]?.id;
+  const list = validConfigsRanked(slabHeight, slabThickness, jackType);
+  const optimalId = list.find(isOptimalEligible)?.id;
 
   if (list.length === 0) {
     return (
@@ -33,7 +43,7 @@ export function ConfigList({ onPick }: { onPick: (c: FrameConfig) => void }) {
         {list.length} option{list.length === 1 ? '' : 's'} service {Math.round(slabHeight)} mm
       </div>
       {list.map((c) => {
-        const r = calcHeightRange(c, slabThickness);
+        const r = calcHeightRange(c, slabThickness, jackType);
         return (
           <button
             key={c.id}
@@ -43,7 +53,7 @@ export function ConfigList({ onPick }: { onPick: (c: FrameConfig) => void }) {
           >
             <div className="config-row-main">
               <span className="config-row-label">{c.label}</span>
-              {c.id === optimalId ? <span className="config-badge">Optimal</span> : null}
+              {badgeFor(c, optimalId)}
             </div>
             <div className="config-row-meta">
               {kindOf(c.frames.length)} · services {Math.round(r.min)}–{Math.round(r.max)} mm

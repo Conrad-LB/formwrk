@@ -25,3 +25,9 @@ dist-ssr
 
 # Local-only adversarial review notes (never publish)
 CLAUDE_CODE_ADVERSARIAL_REVIEW.md
+
+# Standards + supplier reference documents (copyrighted - this repo is public, never publish)
+Standards/
+# Superseded spreadsheet versions (v3 is the committed source of truth)
+Formwork_Material_Selection_v2.xlsx
+Standards - Do NOT Commit/

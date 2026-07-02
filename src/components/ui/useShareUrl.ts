@@ -15,6 +15,7 @@ function toShareState(s: FormworkState): ShareState {
     panelMode: s.panelMode,
     viewMode: s.viewMode,
     slabThickness: s.slabThickness,
+    jackType: s.jackType,
     uHead: s.uHeadExtension,
     base: s.baseExtension,
   };

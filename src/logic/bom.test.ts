@@ -6,7 +6,7 @@ import { BAY_QUANTITIES } from './bayLayout';
 
 const bomFor = (id: string, thickness = 200): BomSection[] => {
   const c = CONFIG_BY_ID[id];
-  return buildBom(c, calcHeightRange(c, thickness));
+  return buildBom(c, calcHeightRange(c, thickness, 'hollow'), 'hollow');
 };
 const findItem = (sections: BomSection[], name: string) =>
   sections.flatMap((s) => s.items).find((i) => i.name === name);

@@ -9,7 +9,7 @@
  */
 
 import type { FrameConfig } from './configurations';
-import { FRAME_HEIGHTS, ROCKETS } from './frameData';
+import { FRAME_HEIGHTS, ROCKETS, type JackType } from './frameData';
 import type { HeightRange } from './heightCalc';
 import { BAY_QUANTITIES } from './bayLayout';
 
@@ -36,7 +36,7 @@ const FT_LABEL: Record<string, string> = {
 
 const mm = (v: number) => `${Math.round(v)} mm`;
 
-export function buildBom(config: FrameConfig, range: HeightRange): BomSection[] {
+export function buildBom(config: FrameConfig, range: HeightRange, jackType: JackType): BomSection[] {
   const levels = config.frames.length;
 
   // Frames grouped by size — two ladder frames per level (front + back).
@@ -66,7 +66,7 @@ export function buildBom(config: FrameConfig, range: HeightRange): BomSection[] 
         {
           name: 'U-Head Screwjack',
           qty: BAY_QUANTITIES.legs,
-          detail: `range ${mm(range.uHeadMin)}–${mm(range.uHeadMax)}`,
+          detail: `${jackType} · range ${mm(range.uHeadMin)}–${mm(range.uHeadMax)}`,
           live: true,
           control: 'uHead',
         },
@@ -78,7 +78,7 @@ export function buildBom(config: FrameConfig, range: HeightRange): BomSection[] 
         {
           name: baseName,
           qty: BAY_QUANTITIES.legs,
-          detail: `${isPropInner ? 'pinned · ' : ''}range ${mm(range.baseMin)}–${mm(range.baseMax)}`,
+          detail: `${isPropInner ? 'pinned · ' : `${jackType} · `}range ${mm(range.baseMin)}–${mm(range.baseMax)}`,
           live: true,
           control: 'base',
         },

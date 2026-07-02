@@ -1,14 +1,17 @@
 /**
  * The canonical formwork configuration catalogue.
  *
- * The brief described "48 configurations". In the spreadsheet those are really
- * 27 CANONICAL configs evaluated across two slab tables (thin < 221mm, thick >= 221mm).
- * The thick table is exactly the thin set MINUS the 6 Prop-Inner configs (Prop Inner
- * is unavailable for thick slabs). So we store 27 configs and derive thin/thick
- * availability + height ranges via rules (see heightCalc.ts). One source, no drift.
+ * The v3 spreadsheet evaluates 28 CANONICAL configs across two slab tables (thin < 221mm,
+ * thick 221-450mm). The thick table is exactly the thin set MINUS the 6 Prop-Inner configs
+ * (Prop Inner is unavailable for thick slabs); rocket configs additionally require hollow
+ * jacks. So we store 28 configs and derive availability + height ranges via rules
+ * (see heightCalc.ts). One source, no drift.
  *
- * 27 = 14 singles (8 Flat Jack + 6 Prop Inner) + 5 doubles + 8 triples.
- * Labels mirror the spreadsheet column headers (sheet row 37 / row 92).
+ * 28 = 14 singles (8 Flat Jack + 6 Prop Inner) + 6 doubles + 8 triples.
+ * Labels mirror the spreadsheet column headers (sheet row 45 / row 90).
+ * v3 added Double: 4ft + 6ft — it closes the thick-band 3652-3769mm gap with a standard
+ * double (previously bridged only by the engineering-flagged Triple 3+3+4).
+ * 4ft + 7ft remains excluded: identical frames total to 5ft + 6ft (both 3353mm).
  */
 
 export type BaseType = 'flatJack' | 'propInner';
@@ -44,7 +47,8 @@ export const CONFIGURATIONS: FrameConfig[] = [
   { id: 's-7ft-300-pi', label: '7ft + 300 Extension Prop Inner', frames: ['7ft'], rocket: '300mm', baseType: 'propInner' },
   { id: 's-7ft-500-pi', label: '7ft + 500 Extension Prop Inner', frames: ['7ft'], rocket: '500mm', baseType: 'propInner' },
 
-  // ---- Doubles · Flat Jack, no rocket (5) ---- sheet cols R,S,T,U,V
+  // ---- Doubles · Flat Jack, no rocket (6) ---- sheet cols R,S,T,U,V,W
+  { id: 'd-4-6', label: 'Double: 4ft + 6ft', frames: ['4ft', '6ft'], rocket: 'none', baseType: 'flatJack' },
   { id: 'd-5-6', label: 'Double: 5ft + 6ft', frames: ['5ft', '6ft'], rocket: 'none', baseType: 'flatJack' },
   { id: 'd-5-7', label: 'Double: 5ft + 7ft', frames: ['5ft', '7ft'], rocket: 'none', baseType: 'flatJack' },
   { id: 'd-6-6', label: 'Double: 6ft + 6ft', frames: ['6ft', '6ft'], rocket: 'none', baseType: 'flatJack' },
