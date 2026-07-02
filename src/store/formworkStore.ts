@@ -29,11 +29,40 @@ import {
   type HeightRange,
 } from '../logic/heightCalc';
 import { simplestValidConfig, simplestAvailableConfig, validConfigsForInputs } from '../logic/catalogue';
-import { customConfigFrom, applySlot, sizeAllowed, EMPTY_SLOTS, type Slots } from '../logic/customBuild';
+import {
+  customConfigFrom,
+  applySlot,
+  sizeAllowed,
+  extensionAllowed,
+  propInnerAllowed,
+  EMPTY_SLOTS,
+  type Slots,
+} from '../logic/customBuild';
 import type { ShareState } from '../logic/shareState';
 import { INPUT_LIMITS, type JackType } from '../logic/frameData';
 
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
+
+/**
+ * The raw rocket selection, downgraded to 'none' once it's no longer selectable (switching
+ * to solid jacks, or building past a single frame). Without this, `customConfigFrom` still
+ * coerces the ACTIVE config's rocket off correctly, but the raw `customRocket` field would
+ * survive untouched and silently reassert itself the moment the build becomes eligible again
+ * (e.g. switching back to hollow) — and would leak a stale value into the share link.
+ */
+function effectiveCustomRocket(frames: Slots, jackType: JackType, rocket: string): string {
+  return extensionAllowed(frames, jackType) ? rocket : 'none';
+}
+
+/**
+ * The raw base-type selection, downgraded to 'flatJack' once Prop Inner is no longer
+ * selectable (switching to a thick slab, or building past a single frame). Same rationale
+ * as effectiveCustomRocket — without this, a Prop Inner pick silently reasserts itself the
+ * moment the build becomes thin+single again, and leaks a stale value into the share link.
+ */
+function effectiveCustomBaseType(slots: Slots, slabThickness: number, baseType: BaseType): BaseType {
+  return baseType === 'propInner' && !propInnerAllowed(slots, slabThickness) ? 'flatJack' : baseType;
+}
 
 /**
  * How the tower is presented in the 3D viewport:
@@ -169,6 +198,9 @@ function resolveCustom(
 type PanelSnapshot = Derived & {
   slabHeight: number;
   slabThickness: number;
+  /** The raw value the user typed, pre-clamp — lets the UI warn accurately when it
+   *  exceeds the design maximum, instead of comparing the already-clamped value. */
+  slabThicknessRaw: number;
   jackType: JackType;
   config: FrameConfig;
   uHeadExtension: number;
@@ -180,7 +212,8 @@ type PanelSnapshot = Derived & {
 export interface FormworkState extends Derived {
   // Inputs
   slabHeight: number; // mm, floor to soffit
-  slabThickness: number; // mm
+  slabThickness: number; // mm, clamped to INPUT_LIMITS.slabThicknessMax
+  slabThicknessRaw: number; // mm, the unclamped value the user typed (for the TWE warning)
   jackType: JackType; // hollow (tubular) or solid-stem screwjacks
 
   // Active configuration + live adjustable extensions (mm)
@@ -251,6 +284,7 @@ const initialAlloc = allocateExtensionsToTarget(initialConfig, DEFAULT_THICKNESS
 const INPUTS_DEFAULT: PanelSnapshot = {
   slabHeight: DEFAULT_HEIGHT,
   slabThickness: DEFAULT_THICKNESS,
+  slabThicknessRaw: DEFAULT_THICKNESS,
   jackType: DEFAULT_JACK,
   config: initialConfig,
   uHeadExtension: initialAlloc.uHeadExtension,
@@ -264,6 +298,7 @@ const INPUTS_DEFAULT: PanelSnapshot = {
 const CUSTOM_DEFAULT: PanelSnapshot = {
   slabHeight: DEFAULT_HEIGHT,
   slabThickness: DEFAULT_THICKNESS,
+  slabThicknessRaw: DEFAULT_THICKNESS,
   jackType: DEFAULT_JACK,
   config: initialConfig, // placeholder; hidden while towerVisible is false
   uHeadExtension: 0,
@@ -282,6 +317,7 @@ const CUSTOM_DEFAULT: PanelSnapshot = {
 const snapshot = (s: FormworkState): PanelSnapshot => ({
   slabHeight: s.slabHeight,
   slabThickness: s.slabThickness,
+  slabThicknessRaw: s.slabThicknessRaw,
   jackType: s.jackType,
   config: s.config,
   uHeadExtension: s.uHeadExtension,
@@ -315,30 +351,41 @@ export const useFormworkStore = create<FormworkState>((set, get) => ({
   },
 
   // Each panel owns its own slab thickness; re-resolve only the active one.
-  // Values above the design maximum clamp to it (the UI shows the TWE note).
+  // Values above the design maximum clamp to it; `slabThicknessRaw` keeps the value the
+  // user actually typed so the TWE warning can compare against THAT, not the clamped
+  // result (which can never itself exceed the maximum).
   setSlabThickness: (t) => {
     if (!Number.isFinite(t)) return;
     const s = get();
-    const slabThickness = clamp(Math.round(t), 0, INPUT_LIMITS.slabThicknessMax);
+    const slabThicknessRaw = Math.round(t);
+    const slabThickness = clamp(slabThicknessRaw, 0, INPUT_LIMITS.slabThicknessMax);
     if (s.panelMode === 'custom') {
-      // Preserve the current jack positions (clamped to the new range).
+      // Preserve the current jack positions (clamped to the new range). A thick slab also
+      // downgrades a raw Prop Inner selection, same rationale as the rocket coercions below.
+      const customBaseType = effectiveCustomBaseType(s.customFrames, slabThickness, s.customBaseType);
       set({
         slabThickness,
-        ...resolveCustom(s.customFrames, s.customRocket, s.customBaseType, slabThickness, s.jackType, s.uHeadExtension, s.baseExtension, s.config),
+        slabThicknessRaw,
+        customBaseType,
+        ...resolveCustom(s.customFrames, s.customRocket, customBaseType, slabThickness, s.jackType, s.uHeadExtension, s.baseExtension, s.config),
       });
     } else {
-      set(resolveInputs(s.slabHeight, slabThickness, s.jackType, s.config));
+      set({ ...resolveInputs(s.slabHeight, slabThickness, s.jackType, s.config), slabThicknessRaw });
     }
   },
 
-  // Each panel owns its own jack type too; rockets coerce off when switching to solid.
+  // Each panel owns its own jack type too; rockets coerce off when switching to solid —
+  // the raw customRocket selection is downgraded too, so it can't silently reappear (or
+  // leak into the share link) when switching back to hollow.
   setJackType: (t) => {
     const s = get();
     if (t === s.jackType) return;
     if (s.panelMode === 'custom') {
+      const customRocket = effectiveCustomRocket(s.customFrames, t, s.customRocket);
       set({
         jackType: t,
-        ...resolveCustom(s.customFrames, s.customRocket, s.customBaseType, s.slabThickness, t, s.uHeadExtension, s.baseExtension, s.config),
+        customRocket,
+        ...resolveCustom(s.customFrames, customRocket, s.customBaseType, s.slabThickness, t, s.uHeadExtension, s.baseExtension, s.config),
       });
     } else {
       set(resolveInputs(s.slabHeight, s.slabThickness, t, s.config));
@@ -432,12 +479,22 @@ export const useFormworkStore = create<FormworkState>((set, get) => ({
   },
 
   // Each custom build change reseats the jacks at minimum (Current = Min); the user then
-  // drags/steppers up. customConfigFrom coerces any now-illegal extension/base.
+  // drags/steppers up. customConfigFrom coerces any now-illegal extension/base; the raw
+  // customRocket/customBaseType selections are downgraded too (see effectiveCustomRocket /
+  // effectiveCustomBaseType) so neither silently reappears if the build later drops back
+  // to a single frame (or, for the rocket, hollow jacks).
   setCustomSlot: (index, size) => {
     const s = get();
     if (s.panelMode !== 'custom') return;
     const customFrames = applySlot(s.customFrames, index, size);
-    set({ customFrames, ...resolveCustom(customFrames, s.customRocket, s.customBaseType, s.slabThickness, s.jackType, 0, 0, s.config) });
+    const customRocket = effectiveCustomRocket(customFrames, s.jackType, s.customRocket);
+    const customBaseType = effectiveCustomBaseType(customFrames, s.slabThickness, s.customBaseType);
+    set({
+      customFrames,
+      customRocket,
+      customBaseType,
+      ...resolveCustom(customFrames, customRocket, customBaseType, s.slabThickness, s.jackType, 0, 0, s.config),
+    });
   },
 
   setCustomRocket: (rocket) => {
@@ -469,13 +526,19 @@ export const useFormworkStore = create<FormworkState>((set, get) => ({
         if (!size || !sizeAllowed(customFrames, i, size)) break;
         customFrames = applySlot(customFrames, i, size);
       }
-      const customRocket = share.rocket ?? 'none';
-      const customBaseType = share.baseType ?? 'flatJack';
+      // A hand-edited link could carry a rocket that's illegal for its own frames/jackType
+      // (e.g. rk=500mm with a double, or with jt=solid) — downgrade it the same way any
+      // other build-time change does, so state never starts out inconsistent.
+      const customRocket = effectiveCustomRocket(customFrames, jackType, share.rocket ?? 'none');
+      // Same rationale — a hand-edited link could carry a Prop Inner base illegal for its
+      // own frames/slab thickness.
+      const customBaseType = effectiveCustomBaseType(customFrames, slabThickness, share.baseType ?? 'flatJack');
       set({
         panelMode: 'custom',
         viewMode,
         viewResetNonce: get().viewResetNonce + 1,
         slabThickness,
+        slabThicknessRaw: slabThickness,
         jackType,
         slabHeight: DEFAULT_HEIGHT,
         customFrames,
@@ -497,6 +560,7 @@ export const useFormworkStore = create<FormworkState>((set, get) => ({
         viewMode,
         viewResetNonce: get().viewResetNonce + 1,
         slabThickness,
+        slabThicknessRaw: slabThickness,
         jackType,
         slabHeight,
         config,

@@ -36,9 +36,14 @@ export function isOptimalEligible(c: FrameConfig): boolean {
   return c.baseType === 'flatJack' && c.frames.length <= 2;
 }
 
-/** Configs that require engineering sign-off before use (never Optimal). */
-export function requiresEngineering(c: FrameConfig): boolean {
-  return !isOptimalEligible(c);
+/**
+ * Engineering-sign-off badge text for a config, or null if it's Optimal-eligible.
+ * Single source for this label so the Optimal view and the Select list can never
+ * show different text for the same config (Prop Inner -> TWE, triples -> general).
+ */
+export function engineeringBadgeLabel(c: FrameConfig): string | null {
+  if (isOptimalEligible(c)) return null;
+  return c.baseType === 'propInner' ? 'TWE required' : 'Engineering required';
 }
 
 /**

@@ -11,6 +11,7 @@ const JACK_OPTIONS: Array<{ value: JackType; label: string; hint: string }> = [
 export function Inputs() {
   const slabHeight = useFormworkStore((s) => s.slabHeight);
   const slabThickness = useFormworkStore((s) => s.slabThickness);
+  const slabThicknessRaw = useFormworkStore((s) => s.slabThicknessRaw);
   const jackType = useFormworkStore((s) => s.jackType);
   const setSlabHeight = useFormworkStore((s) => s.setSlabHeight);
   const setSlabThickness = useFormworkStore((s) => s.setSlabThickness);
@@ -28,10 +29,10 @@ export function Inputs() {
         <span>Slab thickness (mm)</span>
         <NumberInput value={slabThickness} onCommit={setSlabThickness} ariaLabel="slab thickness in millimetres" />
       </label>
-      {slabThickness >= SLAB_THICKNESS_MAX && (
+      {slabThicknessRaw > SLAB_THICKNESS_MAX && (
         <span className="hint warn-note">
-          Slabs thicker than {SLAB_THICKNESS_MAX} mm must be checked by a Temporary Works Engineer — the
-          tool works to {SLAB_THICKNESS_MAX} mm.
+          {slabThicknessRaw} mm exceeds the tool's {SLAB_THICKNESS_MAX} mm design maximum — showing{' '}
+          {SLAB_THICKNESS_MAX} mm. Thicker slabs must be checked by a Temporary Works Engineer.
         </span>
       )}
       <div className="field">

@@ -70,6 +70,15 @@ describe('store: input hardening (Finding 7)', () => {
     expect(get().slabThickness).toBe(450);
   });
 
+  it('slabThicknessRaw keeps the value the user typed, even once clamped', () => {
+    get().setSlabThickness(900);
+    expect(get().slabThickness).toBe(450); // clamped, used for every calc
+    expect(get().slabThicknessRaw).toBe(900); // what the user actually typed
+
+    get().setSlabThickness(450); // in-spec — no clamping occurs
+    expect(get().slabThicknessRaw).toBe(450); // NOT "thicker than 450", must not read as an overage
+  });
+
   it('rejects non-finite extension values', () => {
     const u = get().uHeadExtension;
     get().setUHeadExtension(Infinity);
@@ -281,6 +290,52 @@ describe('store: jack type (hollow / solid)', () => {
     expect(get().config.rocket).toBe('500mm');
     get().setJackType('solid');
     expect(get().config.rocket).toBe('none');
+  });
+
+  it('a rocket dropped by switching to solid does not silently reappear on switching back', () => {
+    get().setPanelMode('custom');
+    get().setCustomSlot(0, '6ft');
+    get().setCustomRocket('500mm');
+    get().setJackType('solid');
+    expect(get().customRocket).toBe('none'); // the raw selection is downgraded, not just the resolved config
+    get().setJackType('hollow');
+    expect(get().config.rocket).toBe('none'); // stays off — the user never re-selected it
+    expect(get().customRocket).toBe('none');
+  });
+
+  it('a rocket dropped by building past a single frame does not reappear on dropping back to one', () => {
+    get().setPanelMode('custom');
+    get().setCustomSlot(0, '6ft');
+    get().setCustomRocket('500mm');
+    get().setCustomSlot(1, '5ft'); // now a double — rockets are single-frame only
+    expect(get().config.rocket).toBe('none');
+    expect(get().customRocket).toBe('none');
+    get().setCustomSlot(1, null); // back to a single
+    expect(get().config.rocket).toBe('none'); // stays off — the user never re-selected it
+  });
+
+  it('a Prop Inner base dropped by switching to a thick slab does not reappear on switching back', () => {
+    get().setPanelMode('custom');
+    get().setCustomSlot(0, '6ft');
+    get().setCustomBaseType('propInner');
+    expect(get().config.baseType).toBe('propInner');
+    get().setSlabThickness(250); // thick — Prop Inner unavailable
+    expect(get().config.baseType).toBe('flatJack');
+    expect(get().customBaseType).toBe('flatJack'); // the raw selection is downgraded, not just the resolved config
+    get().setSlabThickness(200); // back to thin
+    expect(get().config.baseType).toBe('flatJack'); // stays off — the user never re-selected it
+    expect(get().customBaseType).toBe('flatJack');
+  });
+
+  it('a Prop Inner base dropped by building past a single frame does not reappear on dropping back to one', () => {
+    get().setPanelMode('custom');
+    get().setCustomSlot(0, '6ft');
+    get().setCustomBaseType('propInner');
+    get().setCustomSlot(1, '5ft'); // now a double — Prop Inner is single-frame only
+    expect(get().config.baseType).toBe('flatJack');
+    expect(get().customBaseType).toBe('flatJack');
+    get().setCustomSlot(1, null); // back to a single
+    expect(get().config.baseType).toBe('flatJack'); // stays off — the user never re-selected it
   });
 
   it('no optimal exists in the solid thick gap; the previous config is kept (never auto-swaps onto a triple)', () => {

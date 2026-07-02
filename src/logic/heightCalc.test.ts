@@ -17,6 +17,7 @@ import {
   validConfigsRanked,
   configsForSlab,
   isOptimalEligible,
+  engineeringBadgeLabel,
 } from './catalogue';
 import type { JackType } from './frameData';
 
@@ -266,6 +267,23 @@ describe('Optimal policy: single -> single+rocket -> double; PI + triples never 
         }
       }
     }
+  });
+});
+
+describe('engineeringBadgeLabel: single source for the Select-list and Optimal-view badges', () => {
+  it('is null for every Optimal-eligible config (FJ singles + doubles)', () => {
+    for (const c of CONFIGURATIONS.filter(isOptimalEligible)) {
+      expect(engineeringBadgeLabel(c)).toBeNull();
+    }
+  });
+
+  it('flags Prop Inner as "TWE required"', () => {
+    expect(engineeringBadgeLabel(CONFIG_BY_ID['s-6ft-pi'])).toBe('TWE required');
+    expect(engineeringBadgeLabel(CONFIG_BY_ID['s-6ft-500-pi'])).toBe('TWE required');
+  });
+
+  it('flags triples as "Engineering required"', () => {
+    expect(engineeringBadgeLabel(CONFIG_BY_ID['t-3-3-3'])).toBe('Engineering required');
   });
 });
 
