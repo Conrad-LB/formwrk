@@ -5,7 +5,7 @@
  * they are never the Optimal recommendation but remain selectable here.
  */
 import { useFormworkStore } from '../../store/formworkStore';
-import { validConfigsRanked, isOptimalEligible, engineeringBadgeLabel } from '../../logic/catalogue';
+import { validConfigsRanked, isOptimalEligible } from '../../logic/catalogue';
 import { calcHeightRange } from '../../logic/heightCalc';
 import type { FrameConfig } from '../../logic/configurations';
 
@@ -14,8 +14,9 @@ const kindOf = (n: number) => (n === 1 ? 'Single' : n === 2 ? 'Double' : 'Triple
 /** Badge for a row: Optimal (the recommendation) or the engineering flag, if any. */
 function badgeFor(c: FrameConfig, optimalId: string | undefined) {
   if (c.id === optimalId) return <span className="config-badge">Optimal</span>;
-  const label = engineeringBadgeLabel(c);
-  return label ? <span className="config-badge warn">{label}</span> : null;
+  if (c.baseType === 'propInner') return <span className="config-badge warn">TWE required</span>;
+  if (c.frames.length >= 3) return <span className="config-badge warn">Engineering required</span>;
+  return null;
 }
 
 export function ConfigList({ onPick }: { onPick: (c: FrameConfig) => void }) {

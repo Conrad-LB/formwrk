@@ -11,7 +11,7 @@
 import { useState } from 'react';
 import { useFormworkStore } from '../../store/formworkStore';
 import { buildBom } from '../../logic/bom';
-import { simplestValidConfig, engineeringBadgeLabel } from '../../logic/catalogue';
+import { simplestValidConfig, requiresEngineering } from '../../logic/catalogue';
 import { ExtensionStepper } from './ExtensionStepper';
 import { ConfigList } from './ConfigList';
 
@@ -34,7 +34,6 @@ export function Materials() {
   const sections = buildBom(config, range, jackType);
   // Singles' labels are just "6ft" etc., so prefix them; doubles/triples already say so.
   const summary = config.frames.length === 1 ? `Single · ${config.label}` : config.label;
-  const badge = engineeringBadgeLabel(config);
 
   return (
     <section className="card materials">
@@ -72,7 +71,7 @@ export function Materials() {
           )}
           <div className="materials-head">
             <span className="materials-kind">{summary}</span>
-            {badge && <span className="config-badge warn">{badge}</span>}
+            {requiresEngineering(config) && <span className="config-badge warn">Engineering required</span>}
             {!isOptimal && optimal ? (
               <button type="button" className="revert" onClick={() => setConfig(optimal)}>
                 ↩ optimal
